@@ -6,6 +6,7 @@ namespace WinSleeper;
 internal static partial class Program
 {
     private const int VK_ESCAPE = 0x1B;
+    private const int KeyCheckDelayMilliseconds = 50;
 
     private static readonly TimeSpan Timeout = TimeSpan.FromSeconds(5);
 
@@ -21,38 +22,55 @@ internal static partial class Program
 
     private static async Task Main()
     {
-        Console.WriteLine("Компьютер перейдёт в спящий режим через 10 секунд. Нажмите ESC для отмены.");
+        Console.WriteLine("=========================");
+        Console.WriteLine("     Windows Sleeper     ");
+        Console.WriteLine("=========================");
+        Console.WriteLine("Компьютер перейдёт в спящий режим через 10 секунд.");
+        Console.WriteLine("Нажмите ESC для отмены.");
+        Console.WriteLine();
 
         bool keyPressed = false;
 
         Stopwatch stopwatch = Stopwatch.StartNew();
-        Console.WriteLine("Отсчёт времени запущен.");
+        Console.WriteLine("[INFO] Отсчёт времени запущен.");
 
         while (stopwatch.Elapsed < Timeout)
         {
-            Console.WriteLine($"Прошло {stopwatch.ElapsedMilliseconds} мс, проверка нажатий клавиши ESC...");
+            double elapsedSeconds = stopwatch.Elapsed.TotalSeconds;
+            double remainingSeconds = Timeout.TotalSeconds - elapsedSeconds;
+            int progress = (int)(elapsedSeconds / Timeout.TotalSeconds * 100);
+
+            string filled = new('=', progress / 2);
+            string space = new(' ', 50 - progress / 2);
+
+            Console.Write($"\r[{filled}{space}] {progress}% ({remainingSeconds:F1} сек)");
 
             if (GetAsyncKeyState(VK_ESCAPE) != 0)
             {
-                Console.WriteLine("Обнаружено нажатие клавиши ESC.");
+                Console.WriteLine();
+                Console.WriteLine("[INFO] Обнаружено нажатие клавиши ESC. Процесс отменён.");
                 keyPressed = true;
                 break;
             }
 
-            await Task.Delay(50);
+            await Task.Delay(KeyCheckDelayMilliseconds);
         }
 
         if (keyPressed)
         {
-            Console.WriteLine("Спящий режим отменён.");
+            Console.WriteLine("[INFO] Спящий режим отменён.");
         }
         else
         {
-            Console.WriteLine("Переход в спящий режим...");
+            Console.WriteLine();
+            Console.WriteLine("[INFO] Переход в спящий режим...");
             bool result = SetSuspendState(false, true, true);
-            Console.WriteLine(result ? "Спящий режим активирован." : "Не удалось перейти в спящий режим.");
+            Console.WriteLine(result ? "[SUCCESS] Спящий режим активирован." : "[ERROR] Не удалось перейти в спящий режим.");
         }
 
-        Console.WriteLine("Программа завершена.");
+        Console.WriteLine();
+        Console.WriteLine("=========================");
+        Console.WriteLine("       Program End      ");
+        Console.WriteLine("=========================");
     }
 }
