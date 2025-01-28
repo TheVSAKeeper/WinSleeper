@@ -11,9 +11,6 @@ internal static partial class Program
     private const int KeyCheckDelayMilliseconds = 50;
 
     private static readonly TimeSpan Timeout = TimeSpan.FromSeconds(2);
-
-    //private static readonly string LogFilePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "usage_stats.csv");
-
     private static readonly string LogFilePath = Path.Combine(@"C:\Users\admin\Documents", "usage_stats.csv");
 
     private enum ExitMode : byte
@@ -35,9 +32,22 @@ internal static partial class Program
         [MarshalAs(UnmanagedType.Bool)] bool forceCritical,
         [MarshalAs(UnmanagedType.Bool)] bool disableWakeEvent);
 
-    private static async Task Main()
+    [LibraryImport("User32.dll", SetLastError = true)]
+    [UnmanagedCallConv(CallConvs = [typeof(System.Runtime.CompilerServices.CallConvStdcall)])]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static partial bool ShowWindow(IntPtr hWnd, int nCmdShow);
+
+    private static async Task Main(string[] args)
     {
-        if (!File.Exists(LogFilePath))
+        bool isStartup = args.Contains("--startup");
+
+        if (isStartup)
+        {
+            IntPtr handle = Process.GetCurrentProcess().MainWindowHandle;
+            ShowWindow(handle, 6);
+        }
+
+        if (File.Exists(LogFilePath) == false)
         {
             Log("Timestamp;Event;Mode;ElapsedSeconds;RemainingSeconds;KeyPressed;Success");
         }
@@ -47,6 +57,35 @@ internal static partial class Program
         Console.WriteLine("=========================");
         Console.WriteLine("     Windows Sleeper     ");
         Console.WriteLine("=========================");
+
+        Action? onEnd;
+
+        if (isStartup)
+        {
+            onEnd = PerformStart();
+            Log("ProgramEnded", ExitMode.None, TimeSpan.Zero, "None", true);
+        }
+        else
+        {
+            onEnd = await PerformExit();
+        }
+
+        Console.WriteLine();
+        Console.WriteLine("=========================");
+        Console.WriteLine("       Program End      ");
+        Console.WriteLine("=========================");
+
+        onEnd?.Invoke();
+    }
+
+    private static Action? PerformStart()
+    {
+        Log("ComputerStarted", ExitMode.None, TimeSpan.Zero, "None", true);
+        return null;
+    }
+
+    private static async Task<Action?> PerformExit()
+    {
         Console.WriteLine($"Компьютер перейдёт в спящий режим через {Timeout.TotalSeconds} секунд.");
         Console.WriteLine("Нажмите ESC для отмены или Enter для переключения режима.");
         Console.WriteLine();
@@ -167,13 +206,7 @@ internal static partial class Program
         }
 
         Log("ProgramEnded", mode, stopwatch.Elapsed, "None", success);
-
-        Console.WriteLine();
-        Console.WriteLine("=========================");
-        Console.WriteLine("       Program End      ");
-        Console.WriteLine("=========================");
-
-        onEnd?.Invoke();
+        return onEnd;
     }
 
     private static bool Reboot(out Action? onEnd)
