@@ -18,10 +18,11 @@ internal static partial class Program
 
     private enum ExitMode : byte
     {
-        Cancel = 0,
-        Sleep = 1,
-        ShutDown = 2,
-        Reboot = 3,
+        None = 0,
+        Cancel = 1,
+        Sleep = 2,
+        ShutDown = 3,
+        Reboot = 4,
     }
 
     [LibraryImport("user32.dll")]
@@ -38,10 +39,10 @@ internal static partial class Program
     {
         if (!File.Exists(LogFilePath))
         {
-            Log("Timestamp,Event,Mode,ElapsedSeconds,RemainingSeconds,KeyPressed,Success");
+            Log("Timestamp;Event;Mode;ElapsedSeconds;RemainingSeconds;KeyPressed;Success");
         }
 
-        Log($"{DateTime.Now:yyyy-MM-dd HH:mm:ss},ProgramStarted,None,0,{Timeout.TotalSeconds},None,True");
+        Log("ProgramStarted", ExitMode.None, TimeSpan.Zero, "None", true);
 
         Console.WriteLine("=========================");
         Console.WriteLine("     Windows Sleeper     ");
@@ -55,18 +56,17 @@ internal static partial class Program
         ConsoleColor defaultColor = Console.ForegroundColor;
         Console.WriteLine("[INFO] Отсчёт времени запущен.");
 
-        double elapsedSeconds = stopwatch.Elapsed.TotalSeconds;
-        double remainingSeconds = Timeout.TotalSeconds - elapsedSeconds;
-
-        Log($"{DateTime.Now:yyyy-MM-dd HH:mm:ss},TimerStarted,{mode},{elapsedSeconds},{remainingSeconds},None,True");
+        Log("TimerStarted", mode, stopwatch.Elapsed, "None", true);
 
         bool isAutoSwitch = false;
 
-        if (DateTime.Now.TimeOfDay >= new TimeSpan(0, 30, 0))
+        TimeSpan timeOfDay = DateTime.Now.TimeOfDay;
+
+        if (timeOfDay >= TimeSpan.FromHours(0, 30) && timeOfDay <= TimeSpan.FromHours(8))
         {
             Console.SetCursorPosition(0, Console.CursorTop - 1);
             Console.WriteLine("[INFO] Время больше 0:30. Автоматическое переключение на выключение.");
-            Log($"{DateTime.Now:yyyy-MM-dd HH:mm:ss},AutoSwitch,{mode},{elapsedSeconds},{remainingSeconds},None,True");
+            Log("AutoSwitch", mode, stopwatch.Elapsed, "None", true);
             stopwatch.Restart();
             mode = ExitMode.ShutDown;
             isAutoSwitch = true;
@@ -74,8 +74,8 @@ internal static partial class Program
 
         while (stopwatch.Elapsed < Timeout)
         {
-            elapsedSeconds = stopwatch.Elapsed.TotalSeconds;
-            remainingSeconds = Timeout.TotalSeconds - elapsedSeconds;
+            double elapsedSeconds = stopwatch.Elapsed.TotalSeconds;
+            double remainingSeconds = Timeout.TotalSeconds - elapsedSeconds;
             int progress = (int)(elapsedSeconds / Timeout.TotalSeconds * 100);
 
             string filled = new('=', progress / 2);
@@ -97,7 +97,7 @@ internal static partial class Program
             {
                 Console.WriteLine();
                 Console.WriteLine("[INFO] Обнаружено нажатие клавиши ESC. Процесс отменён.");
-                Log($"{DateTime.Now:yyyy-MM-dd HH:mm:ss},KeyPressed,{mode},{elapsedSeconds},{remainingSeconds},ESC,True");
+                Log("KeyPressed", mode, stopwatch.Elapsed, "ESC", true);
                 mode = ExitMode.Cancel;
                 break;
             }
@@ -106,7 +106,7 @@ internal static partial class Program
             {
                 Console.SetCursorPosition(0, Console.CursorTop - 1);
                 Console.WriteLine("[INFO] Обнаружено нажатие клавиши ADD. Перезагрузка.");
-                Log($"{DateTime.Now:yyyy-MM-dd HH:mm:ss},KeyPressed,{mode},{elapsedSeconds},{remainingSeconds},ADD,True");
+                Log("KeyPressed", mode, stopwatch.Elapsed, "ADD", true);
                 stopwatch.Restart();
                 mode = ExitMode.Reboot;
             }
@@ -119,7 +119,7 @@ internal static partial class Program
                     {
                         Console.SetCursorPosition(0, Console.CursorTop - 1);
                         Console.WriteLine("[INFO] Обнаружено нажатие клавиши Enter. Спящий режим.");
-                        Log($"{DateTime.Now:yyyy-MM-dd HH:mm:ss},KeyPressed,{mode},{elapsedSeconds},{remainingSeconds},Enter,True");
+                        Log("KeyPressed", mode, stopwatch.Elapsed, "Enter", true);
                         stopwatch.Restart();
                         mode = ExitMode.Sleep;
                     }
@@ -128,7 +128,7 @@ internal static partial class Program
                 {
                     Console.SetCursorPosition(0, Console.CursorTop - 1);
                     Console.WriteLine("[INFO] Обнаружено нажатие клавиши Enter. Завершение работы.");
-                    Log($"{DateTime.Now:yyyy-MM-dd HH:mm:ss},KeyPressed,{mode},{elapsedSeconds},{remainingSeconds},Enter,True");
+                    Log("KeyPressed", mode, stopwatch.Elapsed, "Enter", true);
                     stopwatch.Restart();
                     mode = ExitMode.ShutDown;
                 }
@@ -160,9 +160,13 @@ internal static partial class Program
             case ExitMode.Reboot:
                 success = Reboot(out onEnd);
                 break;
+
+            case ExitMode.None:
+            default:
+                throw new ArgumentOutOfRangeException();
         }
 
-        Log($"{DateTime.Now:yyyy-MM-dd HH:mm:ss},ProgramEnded,{mode},{stopwatch.Elapsed.TotalSeconds},0,None,{success}");
+        Log("ProgramEnded", mode, stopwatch.Elapsed, "None", success);
 
         Console.WriteLine();
         Console.WriteLine("=========================");
@@ -176,6 +180,10 @@ internal static partial class Program
     {
         onEnd = () =>
         {
+#if DEBUG
+            Console.WriteLine("[DEBUG] Перезагрузка.");
+            return;
+#endif
             ProcessStartInfo info = new("shutdown", "/r /t 0")
             {
                 CreateNoWindow = true,
@@ -194,6 +202,10 @@ internal static partial class Program
     {
         onEnd = () =>
         {
+#if DEBUG
+            Console.WriteLine("[DEBUG] Завершение работы.");
+            return;
+#endif
             ProcessStartInfo info = new("shutdown", "/s /t 0")
             {
                 CreateNoWindow = true,
@@ -211,6 +223,10 @@ internal static partial class Program
     {
         onEnd = () =>
         {
+#if DEBUG
+            Console.WriteLine("[DEBUG] Спящий режим.");
+            return;
+#endif
             SetSuspendState(false, true, true);
         };
 
@@ -223,17 +239,21 @@ internal static partial class Program
         Console.WriteLine("[INFO] Отменёно пользователем.");
     }
 
+    private static void Log(string type, ExitMode mode, TimeSpan elapsed, string keyPressed, bool success)
+    {
+        Log($"{DateTime.Now:yyyy-MM-dd HH:mm:ss:fff};{type};{mode};{elapsed};{Timeout - elapsed};{keyPressed};{success}");
+    }
+
     private static void Log(string message)
     {
         try
         {
             using StreamWriter writer = new(LogFilePath, true);
-
             writer.WriteLine(message);
         }
-        catch (Exception ex)
+        catch (Exception exception)
         {
-            Console.WriteLine($"[ERROR] Не удалось записать в лог: {ex.Message}");
+            Console.WriteLine($"[ERROR] Не удалось записать в лог: {exception.Message}");
         }
     }
 }
