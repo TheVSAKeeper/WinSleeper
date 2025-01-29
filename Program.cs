@@ -40,8 +40,9 @@ internal static partial class Program
     private static async Task Main(string[] args)
     {
         bool isStartup = args.Contains("--startup");
+        bool isShutDown = args.Contains("--shutdown");
 
-        if (isStartup)
+        if (isStartup || isShutDown)
         {
             IntPtr handle = Process.GetCurrentProcess().MainWindowHandle;
             ShowWindow(handle, 6);
@@ -65,6 +66,11 @@ internal static partial class Program
             onEnd = PerformStart();
             Log("ProgramEnded", ExitMode.None, TimeSpan.Zero, "None", true);
         }
+        else if (isShutDown)
+        {
+            onEnd = PerformShutDown();
+            Log("ProgramEnded", ExitMode.None, TimeSpan.Zero, "None", true);
+        }
         else
         {
             onEnd = await PerformExit();
@@ -84,6 +90,12 @@ internal static partial class Program
         return null;
     }
 
+    private static Action? PerformShutDown()
+    {
+        Log("ComputerShutDown", ExitMode.None, TimeSpan.Zero, "None", true);
+        return null;
+    }
+
     private static async Task<Action?> PerformExit()
     {
         Console.WriteLine($"Компьютер перейдёт в спящий режим через {Timeout.TotalSeconds} секунд.");
@@ -95,7 +107,7 @@ internal static partial class Program
         ConsoleColor defaultColor = Console.ForegroundColor;
         Console.WriteLine("[INFO] Отсчёт времени запущен.");
 
-        Log("TimerStarted", mode, stopwatch.Elapsed, "None", true);
+        Log("TimerStarted", ExitMode.ShutDown, stopwatch.Elapsed, "None", true);
 
         bool isAutoSwitch = false;
 
