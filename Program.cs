@@ -1,4 +1,5 @@
 ﻿using System.Diagnostics;
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 
 namespace WinSleeper;
@@ -12,6 +13,8 @@ internal static partial class Program
 
     private static readonly TimeSpan Timeout = TimeSpan.FromSeconds(2);
     private static readonly string LogFilePath = Path.Combine(@"C:\Users\admin\Documents", "usage_stats.csv");
+
+    private static readonly List<string> ProhibitedProcesses = ["steam", "rider"];
 
     private enum ExitMode : byte
     {
@@ -33,7 +36,7 @@ internal static partial class Program
         [MarshalAs(UnmanagedType.Bool)] bool disableWakeEvent);
 
     [LibraryImport("User32.dll", SetLastError = true)]
-    [UnmanagedCallConv(CallConvs = [typeof(System.Runtime.CompilerServices.CallConvStdcall)])]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvStdcall)])]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static partial bool ShowWindow(IntPtr hWnd, int nCmdShow);
 
@@ -115,12 +118,20 @@ internal static partial class Program
 
         if (timeOfDay >= TimeSpan.FromHours(0, 30) && timeOfDay <= TimeSpan.FromHours(8))
         {
-            Console.SetCursorPosition(0, Console.CursorTop - 1);
-            Console.WriteLine("[INFO] Время больше 0:30. Автоматическое переключение на выключение.");
-            Log("AutoSwitch", mode, stopwatch.Elapsed, "None", true);
-            stopwatch.Restart();
-            mode = ExitMode.ShutDown;
-            isAutoSwitch = true;
+            if (CheckForProhibitedProcesses(out List<Process> processes))
+            {
+                Console.WriteLine($"[ERROR] Запущены запрещенные процессы: {string.Join(", ", processes.Select(p => p.ProcessName))}");
+                Log("ShutdownBlocked", ExitMode.ShutDown, TimeSpan.Zero, "None", false, processes);
+            }
+            else
+            {
+                Console.SetCursorPosition(0, Console.CursorTop - 1);
+                Console.WriteLine("[INFO] Время больше 0:30. Автоматическое переключение на выключение.");
+                Log("AutoSwitch", mode, stopwatch.Elapsed, "None", true);
+                stopwatch.Restart();
+                mode = ExitMode.ShutDown;
+                isAutoSwitch = true;
+            }
         }
 
         while (stopwatch.Elapsed < Timeout)
@@ -279,26 +290,39 @@ internal static partial class Program
         return true;
     }
 
+    private static List<Process> GetRunningProhibitedProcesses()
+    {
+        return Process.GetProcesses()
+            .Where(p => ProhibitedProcesses.Any(x => p.ProcessName.Contains(x, StringComparison.InvariantCultureIgnoreCase)))
+            .ToList();
+    }
+
+    private static bool CheckForProhibitedProcesses(out List<Process> processes)
+    {
+        processes = GetRunningProhibitedProcesses();
+        return processes.Count > 0;
+    }
+
     private static void Cancel()
     {
         Console.WriteLine("[INFO] Отменёно пользователем.");
     }
 
-    private static void Log(string type, ExitMode mode, TimeSpan elapsed, string keyPressed, bool success)
+    private static void Log(string type, ExitMode mode, TimeSpan elapsed, string keyPressed, bool success, List<Process>? processes = null)
     {
-        Log($"{DateTime.Now:yyyy-MM-dd HH:mm:ss:fff};{type};{mode};{elapsed};{Timeout - elapsed};{keyPressed};{success}");
+        string processList = processes != null ? string.Join(",", processes.Select(p => p.ProcessName)) : "";
+        Log($"{DateTime.Now:yyyy-MM-dd HH:mm:ss:fff};{type};{mode};{elapsed};{Timeout - elapsed};{keyPressed};{success};{processList}");
     }
 
     private static void Log(string message)
     {
         try
         {
-            using StreamWriter writer = new(LogFilePath, true);
-            writer.WriteLine(message);
+            File.AppendAllText(LogFilePath, message + "\n");
         }
-        catch (Exception exception)
+        catch (Exception ex)
         {
-            Console.WriteLine($"[ERROR] Не удалось записать в лог: {exception.Message}");
+            Console.WriteLine($"[ERROR] Ошибка записи в лог: {ex.Message}");
         }
     }
 }
